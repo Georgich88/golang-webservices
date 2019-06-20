@@ -39,31 +39,20 @@ func dirTreePrint(out *os.File, path string, printFiles bool, levelInfo []bool) 
 		return err
 	}
 
-	sort.Slice(files, func(i, j int) bool { return files[i].Name() < files[j].Name() })
+	// Sorting slide by a filename.
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name() < files[j].Name()
+	})
 
 	size := len(files)
+
 	for i, file := range files {
-
 		if file.IsDir() || printFiles {
-			if len(levelInfo) > 0 {
-
-				for _, level := range levelInfo {
-					if level {
-						fmt.Fprint(out, "│")
-						fmt.Fprint(out, "\t")
-					} else {
-						fmt.Fprint(out, "\t")
-					}
-				}
-
-			}
-			if i == size-1 {
-				fmt.Fprint(out, "└───")
-			} else {
-				fmt.Fprint(out, "├───")
-			}
-			fmt.Fprintln(out, file.Name())
-
+			leadingSymbolsPrint(out, levelInfo)
+			branchesDirTreePrint(out, i, size)
+			fmt.Fprint(out, file.Name())
+			fileSizePrint(out, file)
+			fmt.Fprint(out, "\n")
 		}
 		if file.IsDir() {
 			dirPath := path + string(os.PathSeparator) + file.Name()
@@ -76,4 +65,38 @@ func dirTreePrint(out *os.File, path string, printFiles bool, levelInfo []bool) 
 
 	return nil
 
+}
+
+func fileSizePrint(out *os.File, file os.FileInfo) {
+	if !file.IsDir() {
+		fmt.Fprint(out, " (")
+		if file.Size() == 0 {
+			fmt.Fprint(out, "empty")
+		} else {
+			fmt.Fprint(out, file.Size())
+			fmt.Fprint(out, "b")
+		}
+		fmt.Fprint(out, ")")
+	}
+}
+
+func leadingSymbolsPrint(out *os.File, levelInfo []bool) {
+	if len(levelInfo) > 0 {
+		for _, level := range levelInfo {
+			if level {
+				fmt.Fprint(out, "│")
+				fmt.Fprint(out, "\t")
+			} else {
+				fmt.Fprint(out, "\t")
+			}
+		}
+	}
+}
+
+func branchesDirTreePrint(out *os.File, position int, size int) {
+	if position == size-1 {
+		fmt.Fprint(out, "└───")
+	} else {
+		fmt.Fprint(out, "├───")
+	}
 }
