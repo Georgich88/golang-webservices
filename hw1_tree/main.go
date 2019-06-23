@@ -1,13 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"sort"
 )
 
 func main() {
-	out := os.Stdout
+	out := new(bytes.Buffer)
 	if !(len(os.Args) == 2 || len(os.Args) == 3) {
 		panic("usage go run main.go . [-f]")
 	}
@@ -17,16 +18,18 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
+	result := out.String()
+	fmt.Print(result)
 }
 
-func dirTree(out *os.File, path string, printFiles bool) error {
+func dirTree(out *bytes.Buffer, path string, printFiles bool) error {
 
 	zeroLevelInfo := []bool{}
 	return dirTreePrint(out, path, printFiles, zeroLevelInfo)
 
 }
 
-func dirTreePrint(out *os.File, path string, printFiles bool, levelInfo []bool) error {
+func dirTreePrint(out *bytes.Buffer, path string, printFiles bool, levelInfo []bool) error {
 
 	directory, err := os.Open(path)
 	if err != nil {
@@ -37,6 +40,16 @@ func dirTreePrint(out *os.File, path string, printFiles bool, levelInfo []bool) 
 	directory.Close()
 	if err != nil {
 		return err
+	}
+
+	if !printFiles {
+		var dirs []os.FileInfo
+		for _, file := range files {
+			if file.IsDir() {
+				dirs = append(dirs, file)
+			}
+		}
+		files = dirs
 	}
 
 	// Sorting slide by a filename.
@@ -67,7 +80,7 @@ func dirTreePrint(out *os.File, path string, printFiles bool, levelInfo []bool) 
 
 }
 
-func fileSizePrint(out *os.File, file os.FileInfo) {
+func fileSizePrint(out *bytes.Buffer, file os.FileInfo) {
 	if !file.IsDir() {
 		fmt.Fprint(out, " (")
 		if file.Size() == 0 {
@@ -80,7 +93,7 @@ func fileSizePrint(out *os.File, file os.FileInfo) {
 	}
 }
 
-func leadingSymbolsPrint(out *os.File, levelInfo []bool) {
+func leadingSymbolsPrint(out *bytes.Buffer, levelInfo []bool) {
 	if len(levelInfo) > 0 {
 		for _, level := range levelInfo {
 			if level {
@@ -93,7 +106,7 @@ func leadingSymbolsPrint(out *os.File, levelInfo []bool) {
 	}
 }
 
-func branchesDirTreePrint(out *os.File, position int, size int) {
+func branchesDirTreePrint(out *bytes.Buffer, position int, size int) {
 	if position == size-1 {
 		fmt.Fprint(out, "└───")
 	} else {
