@@ -1,73 +1,50 @@
 package main
 
 import (
-	"crypto/md5"
 	"fmt"
-	"hash/crc32"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+const (
+	TH = 6
+)
+
 // сюда писать код
+func main2() {
 
+	var ok = true
+	var recieved uint32
+	freeFlowJobs := []job{
+		job(func(in, out chan interface{}) {
+			out <- 1
+			time.Sleep(10 * time.Millisecond)
+			currRecieved := atomic.LoadUint32(&recieved)
+			// в чем тут суть
+			// если вы накапливаете значения, то пока вся функция не отрабоатет - дальше они не пойдут
+			// тут я проверяю, что счетчик увеличился в следующей функции
+			// это значит что туда дошло значение прежде чем текущая функция отработала
+			if currRecieved == 0 {
+				ok = false
+			}
+		}),
+		job(func(in, out chan interface{}) {
+			for _ = range in {
+				atomic.AddUint32(&recieved, 1)
+			}
+		}),
+	}
+	ExecutePipeline(freeFlowJobs...)
+	if !ok || recieved == 0 {
+		fmt.Println("no value free flow - dont collect them")
+	}
+}
 func main() {
-	testExpected := "1173136728138862632818075107442090076184424490584241521304_1696913515191343735512658979631549563179965036907783101867_27225454331033649287118297354036464389062965355426795162684_29568666068035183841425683795340791879727309630931025356555_3994492081516972096677631278379039212655368881548151736_4958044192186797981418233587017209679042592862002427381542_4958044192186797981418233587017209679042592862002427381542"
-	testResult := "NOT_SET"
-
-	// это небольшая защита от попыток не вызывать мои функции расчета
-	// я преопределяю фукции на свои которые инкрементят локальный счетчик
-	// переопределение возможо потому что я объявил функцию как переменную, в которой лежит функция
-	var (
-		DataSignerSalt         string = "" // на сервере будет другое значение
-		OverheatLockCounter    uint32
-		OverheatUnlockCounter  uint32
-		DataSignerMd5Counter   uint32
-		DataSignerCrc32Counter uint32
-	)
-	OverheatLock = func() {
-		atomic.AddUint32(&OverheatLockCounter, 1)
-		for {
-			if swapped := atomic.CompareAndSwapUint32(&dataSignerOverheat, 0, 1); !swapped {
-				fmt.Println("OverheatLock happend")
-				time.Sleep(time.Second)
-			} else {
-				break
-			}
-		}
-	}
-	OverheatUnlock = func() {
-		atomic.AddUint32(&OverheatUnlockCounter, 1)
-		for {
-			if swapped := atomic.CompareAndSwapUint32(&dataSignerOverheat, 1, 0); !swapped {
-				fmt.Println("OverheatUnlock happend")
-				time.Sleep(time.Second)
-			} else {
-				break
-			}
-		}
-	}
-	DataSignerMd5 = func(data string) string {
-		atomic.AddUint32(&DataSignerMd5Counter, 1)
-		OverheatLock()
-		defer OverheatUnlock()
-		data += DataSignerSalt
-		dataHash := fmt.Sprintf("%x", md5.Sum([]byte(data)))
-		time.Sleep(10 * time.Millisecond)
-		return dataHash
-	}
-	DataSignerCrc32 = func(data string) string {
-		atomic.AddUint32(&DataSignerCrc32Counter, 1)
-		data += DataSignerSalt
-		crcH := crc32.ChecksumIEEE([]byte(data))
-		dataHash := strconv.FormatUint(uint64(crcH), 10)
-		time.Sleep(time.Second)
-		return dataHash
-	}
-
-	inputData := []int{0, 1, 1, 2, 3, 5, 8}
-	// inputData := []int{0,1}
+	inputData := []int{0, 1, 1, 2, 3, 5}
 
 	hashSignJobs := []job{
 		job(func(in, out chan interface{}) {
@@ -84,47 +61,27 @@ func main() {
 			if !ok {
 				fmt.Println("cant convert result data to string")
 			}
-			testResult = data
+			fmt.Println(data)
 		}),
 	}
 
 	start := time.Now()
-
 	ExecutePipeline(hashSignJobs...)
-
 	end := time.Since(start)
-
-	expectedTime := 3 * time.Second
-
-	if testExpected != testResult {
-		fmt.Println("results not match\nGot: %v\nExpected: %v", testResult, testExpected)
-	}
-
-	if end > expectedTime {
-		fmt.Println("execition too long\nGot: %s\nExpected: <%s", end, time.Second*3)
-	}
-
-	// 8 потому что 2 в SingleHash и 6 в MultiHash
-	if int(OverheatLockCounter) != len(inputData) ||
-		int(OverheatUnlockCounter) != len(inputData) ||
-		int(DataSignerMd5Counter) != len(inputData) ||
-		int(DataSignerCrc32Counter) != len(inputData)*8 {
-		fmt.Println("not enough hash-func calls")
-	}
-
+	fmt.Println("Time passed from: ", end)
 }
 
 func ExecutePipeline(jobs ...job) {
 
 	wg := &sync.WaitGroup{}
-	//mu := &sync.Mutex{}
 
 	input := make(chan interface{})
 
 	for _, jobFunc := range jobs {
+
 		wg.Add(1)
-		output := make(chan interface{})
-		startWorker(jobFunc, input, output, wg)
+		output := make(chan interface{}, TH)
+		go startWorker(jobFunc, input, output, wg)
 		input = output
 	}
 
@@ -135,18 +92,122 @@ func ExecutePipeline(jobs ...job) {
 func startWorker(jobWorker job, in, out chan interface{}, wg *sync.WaitGroup) {
 
 	defer wg.Done()
+	defer close(out)
 	jobWorker(in, out)
-	close(out)
-}
-
-func SingleHash(in, out chan interface{}) {
 
 }
 
+// Calculates crc32(data)+"~"+crc32(md5(data)) two strins concatenations with ~
+// where data - input information (numbers) from the previous function.
+func SingleHash(input, output chan interface{}) {
+
+	wg := &sync.WaitGroup{}
+	mu := &sync.Mutex{}
+	for in := range input {
+		wg.Add(1)
+		go singleHashWorker(in, output, wg, mu)
+
+	}
+	wg.Wait()
+
+}
+
+func singleHashWorker(in interface{}, out chan interface{}, wg *sync.WaitGroup, mu *sync.Mutex) {
+
+	defer wg.Done()
+	data := strconv.Itoa(in.(int)) // reads int data from an input
+
+	Md532Chan := make(chan string)
+	go asyncMd5(data, Md532Chan, mu)
+	Md5Data := <-Md532Chan
+
+	crc32Chan := make(chan string)
+	go asyncCrc32(data, crc32Chan)
+	crc32Data := <-crc32Chan
+
+	crc32Md5Chan := make(chan string)
+	go asyncCrc32(Md5Data, crc32Md5Chan)
+	crc32Md5Data := <-crc32Md5Chan
+
+	out <- crc32Data + "~" + crc32Md5Data
+
+}
+
+func asyncCrc32(data string, out chan string) {
+	out <- DataSignerCrc32(data)
+}
+
+func asyncMd5(data string, out chan string, mu *sync.Mutex) {
+	// DataSignerMd5 can be called only once at the same time. Executes about 10 msec.
+	// If it is called several times simultaneously,  it will be overheat in 1 sec.
+	mu.Lock()
+	Md5Data := DataSignerMd5(data)
+	mu.Unlock()
+	out <- Md5Data
+}
+
+// MultiHash calculates crc32(th+data))
+// (number cast to string and string concatenation),
+// where th=0..5 (those 6 hashes for an each input value ),
+// then get a result concatenation in a calcuation order (0..5),
+// where data - comes from input (and passed to output from SingleHash)
 func MultiHash(in, out chan interface{}) {
 
+	start := time.Now()
+
+	wg := &sync.WaitGroup{}
+
+	for i := range in {
+		wg.Add(1)
+		go multiHashWorker(i.(string), out, TH, wg)
+
+	}
+
+	wg.Wait()
+
+	end := time.Since(start)
+	fmt.Println("Time MultiHash: ", end)
+}
+
+func multiHashWorker(input string, out chan interface{}, th int, wg *sync.WaitGroup) {
+
+	start := time.Now()
+
+	defer wg.Done()
+	dataArray := make([]string, th)
+	jobWg := &sync.WaitGroup{}
+
+	for i := 0; i < th; i++ {
+
+		jobWg.Add(1)
+		//data := strconv.Itoa(i) + input // reads int data from an input
+		//crc32Data := DataSignerCrc32(data)
+		//dataArray[i] = crc32Data
+		//out <- strings.Join(dataArray, "")
+
+		go func(input string, dataArray []string, i int, jobWg *sync.WaitGroup) {
+			//out <- DataSignerCrc32(data)
+			data := strconv.Itoa(i) + input
+			defer jobWg.Done()
+			dataArray[i] = DataSignerCrc32(data)
+		}(input, dataArray, i, jobWg)
+	}
+	jobWg.Wait()
+	out <- strings.Join(dataArray, "")
+
+	end := time.Since(start)
+	fmt.Println("Time multiHashWorker: ", end)
 }
 
 func CombineResults(in, out chan interface{}) {
+	start := time.Now()
+	var result []string
+	for i := range in {
+		result = append(result, i.(string))
+	}
+	end := time.Since(start)
+	fmt.Println("Time CombineResults: ", end)
+	sort.Strings(result)
+	out <- strings.Join(result, "_")
 
 }
