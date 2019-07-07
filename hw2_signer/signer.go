@@ -101,6 +101,8 @@ func startWorker(jobWorker job, in, out chan interface{}, wg *sync.WaitGroup) {
 // where data - input information (numbers) from the previous function.
 func SingleHash(input, output chan interface{}) {
 
+	start := time.Now()
+
 	wg := &sync.WaitGroup{}
 	mu := &sync.Mutex{}
 	for in := range input {
@@ -110,6 +112,8 @@ func SingleHash(input, output chan interface{}) {
 	}
 	wg.Wait()
 
+	end := time.Since(start)
+	fmt.Println("Time SingleHash: ", end)
 }
 
 func singleHashWorker(in interface{}, out chan interface{}, wg *sync.WaitGroup, mu *sync.Mutex) {
@@ -119,13 +123,14 @@ func singleHashWorker(in interface{}, out chan interface{}, wg *sync.WaitGroup, 
 
 	Md532Chan := make(chan string)
 	go asyncMd5(data, Md532Chan, mu)
-	Md5Data := <-Md532Chan
 
 	crc32Chan := make(chan string)
 	go asyncCrc32(data, crc32Chan)
-	crc32Data := <-crc32Chan
 
 	crc32Md5Chan := make(chan string)
+
+	crc32Data := <-crc32Chan
+	Md5Data := <-Md532Chan
 	go asyncCrc32(Md5Data, crc32Md5Chan)
 	crc32Md5Data := <-crc32Md5Chan
 
@@ -178,20 +183,14 @@ func multiHashWorker(input string, out chan interface{}, th int, wg *sync.WaitGr
 	jobWg := &sync.WaitGroup{}
 
 	for i := 0; i < th; i++ {
-
 		jobWg.Add(1)
-		//data := strconv.Itoa(i) + input // reads int data from an input
-		//crc32Data := DataSignerCrc32(data)
-		//dataArray[i] = crc32Data
-		//out <- strings.Join(dataArray, "")
-
 		go func(input string, dataArray []string, i int, jobWg *sync.WaitGroup) {
-			//out <- DataSignerCrc32(data)
 			data := strconv.Itoa(i) + input
 			defer jobWg.Done()
 			dataArray[i] = DataSignerCrc32(data)
 		}(input, dataArray, i, jobWg)
 	}
+
 	jobWg.Wait()
 	out <- strings.Join(dataArray, "")
 
