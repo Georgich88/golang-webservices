@@ -123,18 +123,15 @@ func singleHashWorker(in interface{}, out chan interface{}, wg *sync.WaitGroup, 
 
 	Md532Chan := make(chan string)
 	go asyncMd5(data, Md532Chan, mu)
+	Md5Data := <-Md532Chan
 
 	crc32Chan := make(chan string)
 	go asyncCrc32(data, crc32Chan)
 
 	crc32Md5Chan := make(chan string)
-
-	crc32Data := <-crc32Chan
-	Md5Data := <-Md532Chan
 	go asyncCrc32(Md5Data, crc32Md5Chan)
-	crc32Md5Data := <-crc32Md5Chan
 
-	out <- crc32Data + "~" + crc32Md5Data
+	out <- <-crc32Chan + "~" + <-crc32Md5Chan
 
 }
 
@@ -161,52 +158,54 @@ func MultiHash(in, out chan interface{}) {
 	start := time.Now()
 
 	wg := &sync.WaitGroup{}
-
-	for i := range in {
+	dataArray := make([][]string, TH, TH)
+	i := 0
+	for input := range in {
 		wg.Add(1)
-		go multiHashWorker(i.(string), out, TH, wg)
-
+		if i >= TH {
+			dataArray = append(dataArray, make([]string, TH, TH))
+		} else {
+			dataArray[i] = make([]string, TH, TH)
+		}
+		go multiHashWorker(input.(string), out, dataArray[i], wg)
+		i++
 	}
 
 	wg.Wait()
 
+	for i = 0; i < len(dataArray); i++ {
+		wg.Add(1)
+		go func(dataArray []string, out chan interface{}, wg *sync.WaitGroup) {
+			defer wg.Done()
+			out <- strings.Join(dataArray, "")
+		}(dataArray[i], out, wg)
+	}
+	wg.Wait()
 	end := time.Since(start)
 	fmt.Println("Time MultiHash: ", end)
 }
 
-func multiHashWorker(input string, out chan interface{}, th int, wg *sync.WaitGroup) {
-
-	start := time.Now()
+func multiHashWorker(input string, out chan interface{}, dataArray []string, wg *sync.WaitGroup) {
 
 	defer wg.Done()
-	dataArray := make([]string, th)
-	jobWg := &sync.WaitGroup{}
 
-	for i := 0; i < th; i++ {
-		jobWg.Add(1)
-		go func(input string, dataArray []string, i int, jobWg *sync.WaitGroup) {
+	for i := 0; i < TH; i++ {
+		wg.Add(1)
+		go func(input string, dataArray []string, i int, wg *sync.WaitGroup) {
+			defer wg.Done()
 			data := strconv.Itoa(i) + input
-			defer jobWg.Done()
 			dataArray[i] = DataSignerCrc32(data)
-		}(input, dataArray, i, jobWg)
+		}(input, dataArray, i, wg)
 	}
 
-	jobWg.Wait()
-	out <- strings.Join(dataArray, "")
-
-	end := time.Since(start)
-	fmt.Println("Time multiHashWorker: ", end)
 }
 
 func CombineResults(in, out chan interface{}) {
-	start := time.Now()
 	var result []string
-	for i := range in {
-		result = append(result, i.(string))
+	for input := range in {
+		result = append(result, input.(string))
 	}
-	end := time.Since(start)
-	fmt.Println("Time CombineResults: ", end)
+
 	sort.Strings(result)
 	out <- strings.Join(result, "_")
-
 }
