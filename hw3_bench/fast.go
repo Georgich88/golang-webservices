@@ -2,17 +2,32 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 
 	//"regexp"
+	json "encoding/json"
 	"strings"
 	"sync"
 	"time"
+
+	easyjson "github.com/mailru/easyjson"
+	jlexer "github.com/mailru/easyjson/jlexer"
+	jwriter "github.com/mailru/easyjson/jwriter"
 )
+
+//easyjson:json
+type User struct {
+	Browsers []string `json:"browsers"`
+	Company  string   `json:"company"`
+	Country  string   `json:"country"`
+	Email    string   `json:"email"`
+	Job      string   `json:"job"`
+	Name     string   `json:"name"`
+	Phone    string   `json:"phone"`
+}
 
 func main() {
 
@@ -65,21 +80,11 @@ func FastSearch(out io.Writer) {
 
 	for i, user := range users {
 
-		browsers, ok := user["browsers"].([]interface{})
-		if !ok {
-			// log.Println("cant cast browsers")
-			continue
-		}
 		isAndroid = false
 		isMSIE = false
-		//isAndroidAndMSIE := false
 
-		for _, browserRaw := range browsers {
+		for _, browser := range user.Browsers {
 
-			browser, ok := browserRaw.(string)
-			if !ok {
-				continue
-			}
 			foundAndroid = strings.Contains(browser, "Android")
 			foundMSIE = strings.Contains(browser, "MSIE")
 			if foundAndroid || foundMSIE {
@@ -103,8 +108,8 @@ func FastSearch(out io.Writer) {
 			continue
 		} else {
 			//email := regexpAt.ReplaceAllString(user["email"].(string), " [at] ")
-			email := strings.ReplaceAll(user["email"].(string), "@", " [at] ")
-			foundUser := fmt.Sprintf("[%d] %s <%s>\n", i, user["name"], email)
+			//email := ReplaceAll(user.Email, "@", " [at] ")
+			foundUser := fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, ReplaceAll(user.Email, "@", " [at] "))
 			foundUsers.WriteString(foundUser)
 		}
 
@@ -114,28 +119,182 @@ func FastSearch(out io.Writer) {
 	fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
 }
 
-func getUsers(lines []string) []map[string]interface{} {
+// ReplaceAll returns a copy of the string s with all
+// non-overlapping instances of old replaced by new.
+// If old is empty, it matches at the beginning of the string
+// and after each UTF-8 sequence, yielding up to k+1 replacements
+// for a k-rune string.
+func ReplaceAll(s, old, new string) string {
+	return strings.Replace(s, old, new, -1)
+}
+
+func getUsers(lines []string) []User {
 
 	wg := &sync.WaitGroup{}
 	size := len(lines)
-	users := make([]map[string]interface{}, size, size)
+	users := make([]User, size, size)
 
 	for i, line := range lines {
 
 		wg.Add(1)
-		go func(i int, line string, users []map[string]interface{}, wg *sync.WaitGroup) {
+		go func(i int, line string, users []User, wg *sync.WaitGroup) {
 			defer wg.Done()
-			user := make(map[string]interface{})
-			// fmt.Printf("%v %v\n", err, line)
-			err := json.Unmarshal([]byte(line), &user)
+			err := users[i].UnmarshalJSON([]byte(line))
 			if err != nil {
 				panic(err)
 			}
-			//users = append(users, user)
-			users[i] = user
 		}(i, line, users, wg)
 	}
 
 	wg.Wait()
 	return users
+}
+
+// suppress unused package warning
+var (
+	_ *json.RawMessage
+	_ *jlexer.Lexer
+	_ *jwriter.Writer
+	_ easyjson.Marshaler
+)
+
+func easyjson9f2eff5fDecodeJson(in *jlexer.Lexer, out *User) {
+	isTopLevel := in.IsStart()
+	if in.IsNull() {
+		if isTopLevel {
+			in.Consumed()
+		}
+		in.Skip()
+		return
+	}
+	in.Delim('{')
+	for !in.IsDelim('}') {
+		key := in.UnsafeString()
+		in.WantColon()
+		if in.IsNull() {
+			in.Skip()
+			in.WantComma()
+			continue
+		}
+		switch key {
+		case "browsers":
+			if in.IsNull() {
+				in.Skip()
+				out.Browsers = nil
+			} else {
+				in.Delim('[')
+				if out.Browsers == nil {
+					if !in.IsDelim(']') {
+						out.Browsers = make([]string, 0, 4)
+					} else {
+						out.Browsers = []string{}
+					}
+				} else {
+					out.Browsers = (out.Browsers)[:0]
+				}
+				for !in.IsDelim(']') {
+					var v1 string
+					v1 = string(in.String())
+					out.Browsers = append(out.Browsers, v1)
+					in.WantComma()
+				}
+				in.Delim(']')
+			}
+		case "company":
+			out.Company = string(in.String())
+		case "country":
+			out.Country = string(in.String())
+		case "email":
+			out.Email = string(in.String())
+		case "job":
+			out.Job = string(in.String())
+		case "name":
+			out.Name = string(in.String())
+		case "phone":
+			out.Phone = string(in.String())
+		default:
+			in.SkipRecursive()
+		}
+		in.WantComma()
+	}
+	in.Delim('}')
+	if isTopLevel {
+		in.Consumed()
+	}
+}
+func easyjson9f2eff5fEncodeJson(out *jwriter.Writer, in User) {
+	out.RawByte('{')
+	first := true
+	_ = first
+	{
+		const prefix string = ",\"browsers\":"
+		out.RawString(prefix[1:])
+		if in.Browsers == nil && (out.Flags&jwriter.NilSliceAsEmpty) == 0 {
+			out.RawString("null")
+		} else {
+			out.RawByte('[')
+			for v2, v3 := range in.Browsers {
+				if v2 > 0 {
+					out.RawByte(',')
+				}
+				out.String(string(v3))
+			}
+			out.RawByte(']')
+		}
+	}
+	{
+		const prefix string = ",\"company\":"
+		out.RawString(prefix)
+		out.String(string(in.Company))
+	}
+	{
+		const prefix string = ",\"country\":"
+		out.RawString(prefix)
+		out.String(string(in.Country))
+	}
+	{
+		const prefix string = ",\"email\":"
+		out.RawString(prefix)
+		out.String(string(in.Email))
+	}
+	{
+		const prefix string = ",\"job\":"
+		out.RawString(prefix)
+		out.String(string(in.Job))
+	}
+	{
+		const prefix string = ",\"name\":"
+		out.RawString(prefix)
+		out.String(string(in.Name))
+	}
+	{
+		const prefix string = ",\"phone\":"
+		out.RawString(prefix)
+		out.String(string(in.Phone))
+	}
+	out.RawByte('}')
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v User) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	easyjson9f2eff5fEncodeJson(&w, v)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v User) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjson9f2eff5fEncodeJson(w, v)
+}
+
+// UnmarshalJSON supports json.Unmarshaler interface
+func (v *User) UnmarshalJSON(data []byte) error {
+	r := jlexer.Lexer{Data: data}
+	easyjson9f2eff5fDecodeJson(&r, v)
+	return r.Error()
+}
+
+// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
+func (v *User) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjson9f2eff5fDecodeJson(l, v)
 }
