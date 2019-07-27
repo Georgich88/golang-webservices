@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"strconv"
 
 	//"regexp"
 	json "encoding/json"
@@ -53,8 +55,69 @@ func main() {
 	}
 }
 
-// вам надо написать более быструю оптимальную этой функции
 func FastSearch(out io.Writer) {
+	file, fileErr := os.Open(filePath)
+	if fileErr != nil {
+		panic(fileErr)
+	}
+	defer file.Close()
+
+	writer := bytes.Buffer{}
+	fileScanner := bufio.NewScanner(file)
+	seenBrowsers := make(map[string]struct{}, 0)
+	intBuff := make([]byte, 0, 8)
+
+	writer.WriteString("found users:\n")
+	var i int64
+	user := &User{}
+	for fileScanner.Scan() {
+		err := user.UnmarshalJSON(fileScanner.Bytes())
+		if err != nil {
+			panic(err)
+		}
+
+		isAndroid := false
+		isMSIE := false
+
+		for _, browser := range user.Browsers {
+			if strings.Contains(browser, "Android") {
+				isAndroid = true
+				seenBrowsers[browser] = struct{}{}
+			} else if strings.Contains(browser, "MSIE") {
+				isMSIE = true
+				seenBrowsers[browser] = struct{}{}
+			}
+		}
+
+		if !(isAndroid && isMSIE) {
+			i++
+			continue
+		}
+
+		// log.Println("Android and MSIE user:", user["name"], user["email"])
+		indx := strings.Index(user.Email, "@")
+		writer.WriteByte('[')
+		intBuff = intBuff[:0]
+		writer.Write(strconv.AppendInt(intBuff, i, 10))
+		writer.WriteString("] ")
+		writer.WriteString(user.Name)
+		writer.WriteString(" <")
+		writer.WriteString(user.Email[:indx])
+		writer.WriteString(" [at] ")
+		writer.WriteString(user.Email[indx+1:])
+		writer.WriteString(">\n")
+		writer.WriteTo(out)
+		i++
+	}
+
+	writer.WriteString("\nTotal unique browsers ")
+	intBuff = intBuff[:0]
+	writer.Write(strconv.AppendInt(intBuff, int64(len(seenBrowsers)), 10))
+	writer.WriteByte('\n')
+	writer.WriteTo(out)
+}
+
+func FastSearchOld(out io.Writer) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		panic(err)
@@ -65,13 +128,14 @@ func FastSearch(out io.Writer) {
 		panic(err)
 	}
 
-	//regexpAt := regexp.MustCompile("@")
-	var foundUsers bytes.Buffer
-	foundUsers.WriteString("found users:\n")
+	fmt.Fprint(out, "found users:\n")
+	//out.Write("found users:\n")
 	lines := strings.Split(string(fileContents), "\n")
-	users := getUsers(lines)
+	users := *getUsers(&lines)
 	size := len(users)
-	seenBrowsers := make(map[string]string, size)
+	seenBrowsers := make(map[string]struct{}, size)
+	writer := bytes.Buffer{}
+	intBuff := make([]byte, 0, 8)
 
 	isAndroid := false
 	isMSIE := false
@@ -87,6 +151,7 @@ func FastSearch(out io.Writer) {
 
 			foundAndroid = strings.Contains(browser, "Android")
 			foundMSIE = strings.Contains(browser, "MSIE")
+
 			if foundAndroid || foundMSIE {
 
 				isAndroid = foundAndroid || isAndroid
@@ -95,28 +160,37 @@ func FastSearch(out io.Writer) {
 				_, ok := seenBrowsers[browser]
 
 				if !ok {
-					seenBrowsers[browser] = ""
+					seenBrowsers[browser] = struct{}{}
 				}
 
-			} else {
-				continue
 			}
 
 		}
 
-		if !(isAndroid && isMSIE) {
-			continue
-		} else {
-			//email := regexpAt.ReplaceAllString(user["email"].(string), " [at] ")
-			//email := ReplaceAll(user.Email, "@", " [at] ")
-			foundUser := fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, ReplaceAll(user.Email, "@", " [at] "))
-			foundUsers.WriteString(foundUser)
+		if isAndroid && isMSIE {
+			//fmt.Fprintf(out, "[%d] %s <%s>\n", i, user.Name, ReplaceAll(user.Email, "@", " [at] "))
+			indx := strings.Index(user.Email, "@")
+			writer.WriteByte('[')
+			intBuff = intBuff[:0]
+			writer.Write(strconv.AppendInt(intBuff, int64(i), 10))
+			writer.WriteString("] ")
+			writer.WriteString(user.Name)
+			writer.WriteString(" <")
+			writer.WriteString(user.Email[:indx])
+			writer.WriteString(" [at] ")
+			writer.WriteString(user.Email[indx+1:])
+			writer.WriteString(">\n")
+			writer.WriteTo(out)
 		}
 
 	}
 
-	fmt.Fprintln(out, foundUsers.String())
-	fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
+	//fmt.Fprintln(out, "\nTotal unique browsers", len(seenBrowsers))
+	writer.WriteString("\nTotal unique browsers ")
+	intBuff = intBuff[:0]
+	writer.Write(strconv.AppendInt(intBuff, int64(len(seenBrowsers)), 10))
+	writer.WriteByte('\n')
+	writer.WriteTo(out)
 }
 
 // ReplaceAll returns a copy of the string s with all
@@ -128,13 +202,13 @@ func ReplaceAll(s, old, new string) string {
 	return strings.Replace(s, old, new, -1)
 }
 
-func getUsers(lines []string) []User {
+func getUsers(lines *[]string) *[]User {
 
 	wg := &sync.WaitGroup{}
-	size := len(lines)
+	size := len(*lines)
 	users := make([]User, size, size)
 
-	for i, line := range lines {
+	for i, line := range *lines {
 
 		wg.Add(1)
 		go func(i int, line string, users []User, wg *sync.WaitGroup) {
@@ -147,7 +221,7 @@ func getUsers(lines []string) []User {
 	}
 
 	wg.Wait()
-	return users
+	return &users
 }
 
 // suppress unused package warning

@@ -1,0 +1,7 @@
+Test failed - not fast enough: 
+NsPerOp: 
+    3664739 VS 2352585 (slower); 
+AllocedBytesPerOp: 
+    4065018 VS 559148 (slower); 
+AllocsPerOp: 
+    12573 VS 10418 (slower);

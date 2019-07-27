@@ -1,0 +1,86 @@
+Type: cpu
+Time: Jul 16, 2019 at 6:41am (+07)
+Duration: 3.63s, Total samples = 7.56s (208.30%)
+Entering interactive mode (type "help" for commands, "o" for options)
+(pprof) list FastSearch
+Total: 7.56s
+ROUTINE ======================== _/C_/GitHub/golang-webservices/hw3_bench.FastSearch in C:\GitHub\golang-webservices\hw3_bench\fast.go
+         0      600ms (flat, cum)  7.94% of Total
+         .          .     52:           fmt.Printf("results not match\nGot:\n%v\nExpected:\n%v", fastResult, slowResult)
+         .          .     53:   }
+         .          .     54:}
+         .          .     55:
+         .          .     56:func FastSearch(out io.Writer) {
+         .       10ms     57:   file, err := os.Open(filePath)
+         .          .     58:   if err != nil {
+         .          .     59:           panic(err)
+         .          .     60:   }
+         .          .     61:
+         .      130ms     62:   fileContents, err := ioutil.ReadAll(file)
+         .          .     63:   if err != nil {
+         .          .     64:           panic(err)
+         .          .     65:   }
+         .          .     66:
+         .       10ms     67:   fmt.Fprint(out, "found users:\n")
+         .       40ms     68:   lines := strings.Split(string(fileContents), "\n")
+         .       20ms     69:   users := getUsers(lines)
+         .          .     70:   size := len(users)
+         .       10ms     71:   seenBrowsers := make(map[string]bool, size)
+         .          .     72:
+         .          .     73:   isAndroid := false
+         .          .     74:   isMSIE := false
+         .          .     75:   foundAndroid := false
+         .          .     76:   foundMSIE := false
+         .          .     77:
+         .          .     78:   for i, user := range users {
+         .          .     79:
+         .          .     80:           isAndroid = false
+         .          .     81:           isMSIE = false
+         .          .     82:
+         .          .     83:           for _, browser := range user.Browsers {
+         .          .     84:
+         .       10ms     85:                   foundAndroid = strings.Contains(browser, "Android")
+         .       10ms     86:                   foundMSIE = strings.Contains(browser, "MSIE")
+         .          .     87:
+         .          .     88:                   if foundAndroid || foundMSIE {
+         .          .     89:
+         .          .     90:                           isAndroid = foundAndroid || isAndroid
+         .          .     91:                           isMSIE = foundMSIE || isMSIE
+         .          .     92:
+         .          .     93:                           _, ok := seenBrowsers[browser]
+         .          .     94:
+         .          .     95:                           if !ok {
+         .       10ms     96:                                   seenBrowsers[browser] = true
+         .          .     97:                           }
+         .          .     98:
+         .          .     99:                   } else {
+         .          .    100:                           continue
+         .          .    101:                   }
+         .          .    102:
+         .          .    103:           }
+         .          .    104:
+         .          .    105:           if isAndroid && isMSIE {
+         .      330ms    106:                   foundUser := fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, ReplaceAll(user.Email, "@", " [at] "))
+         .       20ms    107:                   fmt.Fprint(out, foundUser)
+         .          .    108:           }
+         .          .    109:
+         .          .    110:   }
+         .          .    111:
+         .          .    112:   fmt.Fprintln(out, "\nTotal unique browsers", len(seenBrowsers))
+      10ms      3.18s (flat, cum) 42.06% of Total
+         .          .    129:
+         .          .    130:   for i, line := range lines {
+         .          .    131:
+         .          .    132:           wg.Add(1)
+         .          .    133:           go func(i int, line string, users []User, wg *sync.WaitGroup) {
+      10ms       20ms    134:                   defer wg.Done()
+         .      3.15s    135:                   err := users[i].UnmarshalJSON([]byte(line))
+         .          .    136:                   if err != nil {
+         .          .    137:                           panic(err)
+         .          .    138:                   }
+         .       10ms    139:           }(i, line, users, wg)
+         .          .    140:   }
+         .          .    141:
+         .          .    142:   wg.Wait()
+         .          .    143:   return users
+         .          .    144:}

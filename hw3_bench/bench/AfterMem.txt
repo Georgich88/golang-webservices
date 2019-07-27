@@ -1,0 +1,81 @@
+Type: alloc_space
+Time: Jul 16, 2019 at 6:54am (+07)
+Entering interactive mode (type "help" for commands, "o" for options)
+(pprof) list FastSearch
+Total: 1.22GB
+ROUTINE ======================== _/C_/GitHub/golang-webservices/hw3_bench.FastSearch in C:\GitHub\golang-webservices\hw3_bench\fast.go
+  180.28MB   827.89MB (flat, cum) 66.41% of Total
+         .          .     52:           fmt.Printf("results not match\nGot:\n%v\nExpected:\n%v", fastResult, slowResult)
+         .          .     53:   }
+         .          .     54:}
+         .          .     55:
+         .          .     56:func FastSearch(out io.Writer) {
+         .   206.78kB     57:   file, err := os.Open(filePath)
+         .          .     58:   if err != nil {
+         .          .     59:           panic(err)
+         .          .     60:   }
+         .          .     61:
+         .   604.66MB     62:   fileContents, err := ioutil.ReadAll(file)
+         .          .     63:   if err != nil {
+         .          .     64:           panic(err)
+         .          .     65:   }
+         .          .     66:
+         .   426.29kB     67:   fmt.Fprint(out, "found users:\n")
+  165.16MB   169.88MB     68:   lines := strings.Split(string(fileContents), "\n")
+         .    35.52MB     69:   users := *getUsers(lines)
+         .          .     70:   size := len(users)
+   14.17MB    14.17MB     71:   seenBrowsers := make(map[string]bool, size)
+         .          .     72:
+         .          .     73:   isAndroid := false
+         .          .     74:   isMSIE := false
+         .          .     75:   foundAndroid := false
+         .          .     76:   foundMSIE := false
+         .          .     77:
+         .          .     78:   for i, user := range users {
+         .          .     79:
+         .          .     80:           isAndroid = false
+         .          .     81:           isMSIE = false
+         .          .     82:
+         .          .     83:           for _, browser := range user.Browsers {
+         .          .     84:
+         .          .     85:                   foundAndroid = strings.Contains(browser, "Android")
+         .          .     86:                   foundMSIE = strings.Contains(browser, "MSIE")
+         .          .     87:
+         .          .     88:                   if foundAndroid || foundMSIE {
+         .          .     89:
+         .          .     90:                           isAndroid = foundAndroid || isAndroid
+         .          .     91:                           isMSIE = foundMSIE || isMSIE
+         .          .     92:
+         .          .     93:                           _, ok := seenBrowsers[browser]
+         .          .     94:
+         .          .     95:                           if !ok {
+         .          .     96:                                   seenBrowsers[browser] = true
+         .          .     97:                           }
+         .          .     98:
+         .          .     99:                   } else {
+         .          .    100:                           continue
+         .          .    101:                   }
+         .          .    102:
+         .          .    103:           }
+         .          .    104:
+         .          .    105:           if isAndroid && isMSIE {
+         .          .    106:                   //foundUser := fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, ReplaceAll(user.Email, "@", " [at] "))
+  980.59kB     3.04MB    107:                   fmt.Fprintf(out, "[%d] %s <%s>\n", i, user.Name, ReplaceAll(user.Email, "@", " [at] "))
+         .          .    108:           }
+         .          .    109:
+         .          .    110:   }
+         .          .    111:
+    3.22kB     3.22kB    112:   fmt.Fprintln(out, "\nTotal unique browsers", len(seenBrowsers))
+         .          .    113:}
+  171.14MB   341.66MB (flat, cum) 27.41% of Total
+         .          .    130:   for i, line := range lines {
+         .          .    131:
+         .          .    132:           wg.Add(1)
+         .          .    133:           go func(i int, line string, users []User, wg *sync.WaitGroup) {
+         .          .    134:                   defer wg.Done()
+  171.14MB   341.66MB    135:                   err := users[i].UnmarshalJSON([]byte(line))
+         .          .    136:                   if err != nil {
+         .          .    137:                           panic(err)
+         .          .    138:                   }
+         .          .    139:           }(i, line, users, wg)
+         .          .    140:   }
